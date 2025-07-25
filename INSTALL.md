@@ -25,8 +25,8 @@
 
 1. Клонируйте репозиторий:
 ```bash
-git clone https://github.com/neuro-fill/AIChatFlutter.git
-cd AIChatFlutter
+git clone https://github.com/pavel-koshkarov3/flutter-gpt-key-auth.git
+cd flutter-gpt-key-auth
 ```
 
 2. Установите Flutter SDK:
