@@ -242,4 +242,14 @@ class OpenRouterClient {
       return '0.00';
     }
   }
+
+  // Метод определения типа ключа
+  static String identifyKeyType(String apiKey) {
+    if (apiKey.startsWith('sk-or-vv-')) {
+      return 'VSEGPT';
+    } else if (apiKey.startsWith('sk-or-v1-')) {
+      return 'OpenRouter';
+    }
+    return 'Unknown';
+  }
 }

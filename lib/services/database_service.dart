@@ -1,5 +1,5 @@
 // Импорт платформо-зависимых функций
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, File, Directory;
 // Импорт утилит для работы с путями
 import 'package:path/path.dart';
 // Импорт основного пакета для работы с SQLite
@@ -44,24 +44,46 @@ class DatabaseService {
     // Получение пути к базе данных
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, 'chat_cache.db'); // Имя файла базы данных
+    print('Database path: $path');
+    print('Database will be saved at: ${File(path).absolute.path}');
+    print('Directory contents: ${Directory(dbPath).listSync()}');
 
     // Открытие/создание базы данных
+    print('Opening database...');
     return await openDatabase(
       path,
       version: 1,
       onCreate: (Database db, int version) async {
-        // Создание таблицы messages при первом запуске
-        await db.execute('''
-          CREATE TABLE messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            content TEXT NOT NULL,
-            is_user INTEGER NOT NULL,
-            timestamp TEXT NOT NULL,
-            model_id TEXT,
-            tokens INTEGER,
-            cost REAL
-          )
-        ''');
+        try {
+          print('Creating messages table...');
+          await db.execute('''
+            CREATE TABLE messages (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              content TEXT NOT NULL,
+              is_user INTEGER NOT NULL,
+              timestamp TEXT NOT NULL,
+              model_id TEXT,
+              tokens INTEGER,
+              cost REAL
+            )
+          ''');
+          print('Messages table created successfully');
+
+          print('Creating auth table...');
+          await db.execute('''
+            CREATE TABLE auth (
+              api_key TEXT PRIMARY KEY,
+              pin_code TEXT NOT NULL,
+              provider_type TEXT NOT NULL,
+              balance REAL NOT NULL,
+              last_updated TEXT NOT NULL
+            )
+          ''');
+          print('Auth table created successfully');
+        } catch (e) {
+          print('Error creating tables: $e');
+          rethrow;
+        }
       },
     );
   }
@@ -177,6 +199,109 @@ class DatabaseService {
         'total_tokens': 0,
         'model_usage': {},
       };
+    }
+  }
+
+  // Метод сохранения данных аутентификации
+  Future<void> saveAuthData({
+    required String apiKey,
+    required String pinCode,
+    required String providerType,
+    required double balance,
+  }) async {
+    try {
+      final db = await database;
+      print('Saving auth data:');
+      print('API Key: ${apiKey.substring(0, 5)}...');
+      print('PIN Code: $pinCode');
+      print('Provider: $providerType');
+      print('Balance: $balance');
+
+      final result = await db.insert(
+        'auth',
+        {
+          'api_key': apiKey,
+          'pin_code': pinCode,
+          'provider_type': providerType,
+          'balance': balance,
+          'last_updated': DateTime.now().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+      print('Auth data saved with result: $result');
+      print('Verifying saved data...');
+      final savedData = await getAuthData(apiKey);
+      print('Saved data verification: ${savedData != null}');
+    } catch (e) {
+      debugPrint('Error saving auth data: $e');
+      print('Full error: $e');
+      rethrow;
+    }
+  }
+
+  // Метод получения данных аутентификации
+  Future<Map<String, dynamic>?> getAuthData(String apiKey) async {
+    try {
+      final db = await database;
+      final List<Map<String, dynamic>> result = await db.query(
+        'auth',
+        where: 'api_key = ?',
+        whereArgs: [apiKey],
+        limit: 1,
+      );
+      return result.isNotEmpty ? result.first : null;
+    } catch (e) {
+      debugPrint('Error getting auth data: $e');
+      return null;
+    }
+  }
+
+  // Метод получения первого сохраненного ключа
+  Future<Map<String, dynamic>?> getFirstAuthData() async {
+    try {
+      final db = await database;
+      print('Querying auth table...');
+      final List<Map<String, dynamic>> result = await db.query(
+        'auth',
+        limit: 1,
+      );
+      print('Found ${result.length} auth records');
+      return result.isNotEmpty ? result.first : null;
+    } catch (e) {
+      debugPrint('Error getting first auth data: $e');
+      return null;
+    }
+  }
+
+  // Метод удаления данных аутентификации
+  Future<void> deleteAuthData(String apiKey) async {
+    try {
+      final db = await database;
+      await db.delete(
+        'auth',
+        where: 'api_key = ?',
+        whereArgs: [apiKey],
+      );
+    } catch (e) {
+      debugPrint('Error deleting auth data: $e');
+    }
+  }
+
+  // Метод проверки PIN кода
+  Future<bool> checkPin(String apiKey, String pin) async {
+    try {
+      final db = await database;
+      final List<Map<String, dynamic>> result = await db.query(
+        'auth',
+        where: 'api_key = ? AND pin_code = ?',
+        whereArgs: [apiKey, pin],
+        limit: 1,
+      );
+      return result.isNotEmpty;
+    } catch (e) {
+      debugPrint('Error checking PIN: $e');
+      return false;
     }
   }
 }
